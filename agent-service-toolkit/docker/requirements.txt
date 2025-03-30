@@ -1,0 +1,9 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+pymupdf
+chromadb
+torch==2.6.0+cpu
+beautifulsoup4
+sentence-transformers
+langchain
+langchain_community
