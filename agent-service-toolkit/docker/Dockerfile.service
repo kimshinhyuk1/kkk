@@ -24,12 +24,12 @@ CMD ["python", "run_service.py"]
 RUN pip install --no-cache-dir --upgrade pip
 #RUN pip install --no-cache-dir -r requirements.txt
 
-RUN pip install --no-cache-dir \
+RUN pip install \
     pymupdf \
     chromadb \
-    torch==2.6.0 -f https://download.pytorch.org/whl/cpu/torch_stable.html \
+    #torch==2.6.0 -f https://download.pytorch.org/whl/cpu/torch_stable.html \
     beautifulsoup4 \
-    sentence-transformers \
+    #sentence-transformers \
     langchain \
-    langchain-community\
-    langchain_huggingface
+    langchain-community
+   # langchain_huggingface

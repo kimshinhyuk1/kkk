@@ -70,57 +70,52 @@ def get_latest_ai(messages: List) -> str:
     return END
 
 def interaction(state: State):
-    """
-    사용자와 상호작용(iz 노드 역할)을 수행하는 함수.
-    - 체인을 불러와 사용자 질문과 관련 맥락을 전달
-    - LLM 체인에서 프롬프트를 기반으로 추가 질문(혹은 간단한 확인)을 거쳐
-    최종적으로 사용자 요구사항을 구체화하거나 확정짓는 응답을 생성.
-    """
-    print("--- [INTERACTION] ---")
+
 
     # 체인(예: interaction_chain) 임포트
     from .interaction import interaction_chain
     from langchain.schema import AIMessage
-
-    # 사용자 최근 메시지 추출
-    question = get_latest_human(state["messages"])  # 헬퍼 함수 (이미 정의되었다고 가정)
-
-    # 체인 호출: "question" 등을 입력으로 넘김
-    chain_input = {
-        "question": question
-        # 필요 시, 사용자 context나 요약본(state["summary"]) 등도 함께 전달 가능
+    question = get_latest_human(state["messages"])
+    
+    chain_output = interaction_chain.invoke({"question": question})
+    final_query_str = chain_output["text"]  # 또는 "final_answer", "response", "content" 등
+    
+    return {
+        "messages": [AIMessage(content=final_query_str)],
+        # 추가: state에 별도로 저장
+        "refined_query": final_query_str
     }
-    chain_output = interaction_chain.invoke(chain_input)
-    # chain_output: 체인에서 생성된 텍스트(문자열)
 
-    # 최종적으로 AIMessage로 래핑하여 state에 추가
-    return {"messages": [AIMessage(content=chain_output.content)]}
 
 # --- 노드 함수들 ---
 def retrieve(state: State):
     print("--- [RETRIEVE] ---")
-    question = get_latest_human(state["messages"])
-    documents = retriever.invoke(question)  # retriever는 외부에서 정의됨
+    # 만약 'refined_query'가 state에 있으면 그걸 사용, 없으면 user 질문 fallback
+    refined_query = state.get("refined_query")
+    if refined_query:
+        question = refined_query
+    else:
+        question = get_latest_human(state["messages"])
+    
+    documents = retriever.invoke(question)
     return {"documents": documents}
 
 def grade_documents(state: State):
     """
-    retrieved documents가 user query와 연관 있는지 확인 후, 연관 있는 문서만 남김
+    Processes retrieved documents without relevance scoring
     """
-    print("--- [CHECK DOCUMENT RELEVANCE] ---")
-    from .grading import grader_chain
-    question = get_latest_human(state["messages"])
+    print("--- [PROCESS DOCUMENTS] ---")
+    
+    # Use refined_query if available in state, otherwise use the latest human message
+    if state.get("refined_query"):
+        question = state["refined_query"]
+    else:
+        question = get_latest_human(state["messages"])
+    
     documents = state["documents"]
-    filtered_docs = []
-    for doc in documents:
-        score = grader_chain.invoke({"document": doc, "question": question}).binary_score
-        if score == "yes":
-            print("     --- SCORE: DOCUMENT RELEVANT")
-            filtered_docs.append(doc)
-        else:
-            print("     --- SCORE: DOCUMENT NOT RELEVANT")
-    return {"documents": filtered_docs}
-
+    
+    # Simply return the documents without filtering
+    return {"documents": documents}
 def generate(state: State):
     print("--- [GENERATE] ---")
     from .generation import generator_chain
@@ -321,10 +316,12 @@ flow.add_node("direct_generate", direct_generate)
 flow.add_node("interaction",interaction)
 flow.add_node("grade_documents",grade_documents)
 
+flow.add_edge(START, "interaction")  # 예시
+
 flow.add_edge("interaction","retrieve")
 flow.add_edge("retrieve", "grade_documents")
-flow.add_edge("grade_documents", "genearte")
-flow.add_edge("genearte", END)
+flow.add_edge("grade_documents", "generate")
+flow.add_edge("generate", END)
 
 
 

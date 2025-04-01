@@ -61,6 +61,8 @@ template = """Your end goal is to convey information to the user by **keeping th
 
 Following these guidelines, **without forcing or modifying the original content**, be transparent about gaps, and allow users to see the most important information at a glance.
 
+답변은 사용자의 쿼리와 동일한 언어로 해라
+
 Question: {question}
 Context: {context}
 Answer:"""

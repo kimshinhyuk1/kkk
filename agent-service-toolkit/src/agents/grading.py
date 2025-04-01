@@ -1,76 +1,54 @@
 # grading.py
-from typing import Literal
-from pydantic import BaseModel, Field
-# grading.py
-
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
 # 시스템 메시지: 모델에게 역할과 평가 기준 지시
 system = """
-You are grade_doc. Your end goal is to pass documents retrieved from the search node to the generation node, prioritising them according to specific instructions. 
 
-Your goal:
-- You have a specific requirement that needs to be addressed (criterion 1).
-- They also want information about *why* they need the requirement (criterion 2).
-- The user wants information that focuses on their *specific question/area* (criterion 3).
-- They value scientific evidence, professional references, or experimental details (Criterion 4).
+You are grade_doc. Your end goal is to deliver documents from the retrive node to the generate node in a prioritised order based on the evaluation criteria designed using the user's goals as a baseline. 
 
-Here are the specific criteria in order of priority
+Make sure you understand the user's goals, which are the basis for the evaluation criteria, and then forward the documents to the generate node based on the evaluation criteria.
+<User's goal
+1) There is a specific need to be addressed (Criterion 1, required)
+2) I'm curious about why I need that need (Criterion 2)
+3) Prefer information that focuses precisely on the user's question/area (Criterion 3)
+4) Value scientific evidence or professional references (Criterion 4)
 
-1) [Required] Does the documentation contain information that addresses your needs?
-   - If it doesn't, don't send the documentation to be created (exclude it).
+### Evaluation Criteria 1. **Criterion (1) Required**.  
+   - If the document has absolutely no information that addresses your needs, exclude it.
 
-2) Does the article contain information that explains ‘why’ the user wants to address this need?
-3) Is the documentation specific to the user's question, not too general or broad?
-4) Does the documentation include scientific evidence, experimental procedures, or professional references?
+2. **Criteria (2), (3), and (4) are judged as ‘Satisfactory/Partially Satisfactory/Not Satisfactory’**.  
+   - Example) ‘Partially satisfied’ means that the information is mentioned, but not enough.
 
-Ranking approach:
-- For each document, count how many of the criteria in (1) to (4) are clearly met. 
-  - (1) must be met; if it is not, exclude the document.
-  - (2), (3), and (4) can be ‘fully satisfied,’ ‘partially satisfied,’ or ‘not satisfied.’
-  - If one document satisfies (2), (3), and (4) more than another, it has a higher priority.
-- If two or more documents satisfy *the same number of criteria*, they are compared in the order (2) → (3) → (4):
-  - For example, if two documents have the same total number of criteria, but Document A fully satisfies (2) and Document B partially satisfies (2), then Document A is considered to have a higher priority. If there is still a tie, compare (3) and then move on to (4).
-  - If there is still a tie after all comparisons, give them the same priority and pass them together to generate.
+3. **Priority Calculation  
+   - Documents with more ‘Fully satisfied’ from (2) to (4) are the highest priority.  
+   - If the number of satisfactions is the same, compare the subdivisions in the order (2)→(3)→(4):  
+     - Example: If both documents have 2 satisfies, compare (2) first → if there is no difference, then (3) → (4).  
+     - If still tied, pass them all to the generate node with the same ranking.
 
-Partially satisfies and comments:
-- Sometimes a document only *partially* meets a criterion. For example 
-  - A solution to back pain caused by heavy deadlifts may be offered (‘use higher reps with lower weight’), but the evidence is minimal (e.g., only one brief expert opinion). This means that the evidence/reference criterion is partially met. 
-- If you find elements** that are partially met or missing, please note these shortcomings in a note and pass them on. 
-- You don't need to give a numerical score - a simple explanation such as ‘The document provides minimal evidence and therefore partially meets criterion (4)’ is sufficient.
+4. **Explanation when partially satisfied  
+   - Please make a short note of what is lacking, e.g. ‘only 1 expert opinion with simple evidence’.
 
-Edge cases:
-- Multiple documents may fully satisfy (1) and partially or fully satisfy other criteria. In this case, you can send them all if it's helpful to the user. 
-- If the articles don't meet (1), exclude them all. 
+5. **Edge cases  
+   - If only (1) is satisfied, does it pass? → No. (1) is required, but if none of (2) to (4) are met, it may not be very helpful to the user. You can still send it to the creation node if you want.  
+   - When multiple documents have different strengths, you can pass them all if you think it's beneficial to the user.
 
-Primary purpose:
-- The purpose is not to obsess over the ranking itself, but ultimately to ensure that users receive information that is acceptable and trustworthy.
-- If the documents have the same priority, send them all to the Generate node.
-- For each document that passes, mark the criteria met/partially met and note any weaknesses (partial satisfaction) so that the generation node can provide a clear, unified answer to the user.
+### Final output format (example)
 
-Output format (suggestion):
-For clarity, you can output the results for each document in the following structured format:
+We recommend a structured reporting format for your documentation. Example:
 
-[
-  {
-    ‘doc_id": ‘docA’,
-    ‘criterion_1": ‘Satisfactory’,
-    ‘criterion_2": ‘partially satisfied‘, // or “satisfied”/’not satisfied’
-    ‘criterion_3": ‘Satisfied’,
-    ‘criterion_4": ‘Not satisfied’,
-    ‘partial_explanation": ‘Simple expert opinion, minimal evidence’,
-    ‘priority": 1
-  },
-  ...
-]
+[ { ‘doc_id’: ‘docA’, “criterion_1”: ‘Satisfied’, “criterion_2”: ‘Partially satisfied’, “criterion_3”: ‘Satisfied’, “criterion_4”: ‘Not satisfied’, “partial_explanation”: ‘Scientific evidence is only one line of expert opinion’, “priority”: 1 }, ... ]
 
-Feel free to adjust this structure as needed, as long as it is visible to the creation node:
-- Criteria met/partially met.
-- Description of any shortcomings
-- Final priority or tie.
+- Although this format does not necessarily have to be followed,  
+- (1) to (4) need only be stated, along with the priority and explanation of the shortfall.
 
-Remember: The key outcome is to provide a document that truly helps address the user's needs, explaining the ‘why’ while highlighting any partially satisfied or missing details."""
+### Main purpose
+
+- The main purpose is not the ranking itself, but the selection of **‘documents that users trust and that meet their needs + reasons’**.  
+- Even if there are a lot of ties, move them all to the Create node if it's beneficial.  
+- If there are weaknesses, such as ‘partially met’ or ‘lack of evidence’, be honest and note them down so that the Generate node can reference them.
+
+Translated with DeepL.com (free version)"""
 
 # 프롬프트 템플릿: 문서와 질문을 전달하고 평가를 요청
 grade_prompt = ChatPromptTemplate.from_messages(
@@ -94,40 +72,3 @@ llm = ChatOpenAI(model="gpt-4o", temperature=0)
 
 # 프롬프트와 LLM을 연결 (구조화된 출력 X)
 grader_chain = grade_prompt | llm
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# 최종 답변이 질문에 부합하는지 평가하는 체인
-class GradeAnswer(BaseModel):
-    """Binary score to assess answer addresses question."""
-    binary_score: str = Field(
-        description="Answer addresses the question, 'yes' or 'no'"
-    )
-
-system = """You are a grader assessing whether an answer addresses / resolves a question 
-Give a binary score 'yes' or 'no'. 'Yes' means that the answer resolves the question."""
-answer_grade_prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", system),
-        ("human", "User question: \n\n {question} \n\n LLM generation: {generation}"),
-    ]
-)
-
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-llm_answer_grader = llm.with_structured_output(GradeAnswer)
-answer_grader_chain = answer_grade_prompt | llm_answer_grader
