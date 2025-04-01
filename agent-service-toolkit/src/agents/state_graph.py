@@ -70,8 +70,6 @@ def get_latest_ai(messages: List) -> str:
     return END
 
 def interaction(state: State):
-
-
     # 체인(예: interaction_chain) 임포트
     from .interaction import interaction_chain
     from langchain.schema import AIMessage
@@ -80,12 +78,28 @@ def interaction(state: State):
     chain_output = interaction_chain.invoke({"question": question})
     final_query_str = chain_output["text"]  # 또는 "final_answer", "response", "content" 등
     
+    # 쿼리 확정 여부 확인 (예: "Let's finalise the query" 또는 "최종 쿼리를 확정합니다" 등의 문구 포함 여부)
+    is_query_finalized = "최종 쿼리" in final_query_str or "finalise the query" in final_query_str.lower()
+    
     return {
         "messages": [AIMessage(content=final_query_str)],
-        # 추가: state에 별도로 저장
-        "refined_query": final_query_str
+        "refined_query": final_query_str,
+        "query_finalized": is_query_finalized  # 쿼리 확정 여부 상태 추가
     }
 
+# 2. 쿼리 확정 여부를 확인하는 라우터 함수 추가
+def check_query_status(state: State):
+    print("--- [CHECK QUERY STATUS] ---")
+    
+    # 쿼리 확정 여부 확인하여 Boolean 값만 반환
+    is_finalized = state.get("query_finalized", False)
+    
+    if is_finalized:
+        print("--- [QUERY FINALIZED] ---")
+    else:
+        print("--- [QUERY NOT FINALIZED] ---")
+        
+    return is_finalized
 
 # --- 노드 함수들 ---
 def retrieve(state: State):
@@ -127,10 +141,8 @@ def generate(state: State):
 
     # ✅ 프롬프트를 직접 수정하여 논문을 나열하는 로직 추가
     prompt = f"""
-    검색된 논문의 내용을 참고하여 최종적으로 정리된 답변을 작성하세요.
-    논문의 원문을 유지하며, 사용자가 원할 경우 번역 여부를 선택할 수 있도록 하세요.
-
-    논문이 영어로 되어 있다면, 응답 마지막에 "📝 원하시면 한국국어로 번역해 드릴까요?"를 포함하세요.
+    
+    논문이 영어로 되어 있다면,논문 영어 원본 정보와 원본을 한국어로 번역한 정보 두개 다 남기십시오.
     매번 답변의 마지막에 출처를 남기세요.
         사용자의 질문: {question}
     
@@ -316,13 +328,22 @@ flow.add_node("direct_generate", direct_generate)
 flow.add_node("interaction",interaction)
 flow.add_node("grade_documents",grade_documents)
 
-flow.add_edge(START, "interaction")  # 예시
+# 엣지 수정
+flow.add_edge(START, "interaction")
+# 조건부 엣지 수정 - 올바른 메서드 사용
 
-flow.add_edge("interaction","retrieve")
+flow.add_conditional_edges(
+    "interaction",
+    check_query_status,
+    {
+        True: "retrieve",     # 쿼리가 최종이면 retrieve로
+        False: END  # 쿼리가 최종이 아니면 interaction으로 다시
+    }
+)
+
 flow.add_edge("retrieve", "grade_documents")
 flow.add_edge("grade_documents", "generate")
 flow.add_edge("generate", END)
-
 
 
 memory = MemorySaver()

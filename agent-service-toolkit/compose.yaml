@@ -1,7 +1,6 @@
 services:
   agent_service:
-    volumes:
-      - '/c/Users/김신혁/nine/agent-service-toolkit/data:/app/data'
+  
     build:
       context: .
       dockerfile: docker/Dockerfile.service
