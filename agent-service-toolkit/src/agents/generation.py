@@ -45,21 +45,26 @@ template = """Your end goal is to convey information to the user by **keeping th
 
 ### Example final output
 
-1. **[Documentation selection rationale]**  
-   - ‘This document was judged by grade_doc to be relevant to addressing your needs because (redacted)...’
+1. **[Rationale for document selection]**  
+   - 'This document was determined by grade_doc to be relevant to address your needs because (deleted)...'
 
-2. **[Primary solution: 1st ranked documentation details]**  
-   - ‘Solution overview, action steps, references, gaps, etc.’
+2. **** [Provide specifics of the document that addresses your need] (this is the most important point)
 
-3. **[One-line summary of other documents (ranked 2-4)]** ‘Summary of other documents...  
-   - ‘Second-ranked document: ...’  
-   - ‘Third-ranked document: ...’  
-   - ‘4th ranked document: ...’  
+3. **[Primary solution: details of the #1 document]** 2.  
+   - “Solution overview, action steps, references, gaps, etc.
 
-4. **[Summary of gaps and subsequent suggestions]** [Gaps and suggestions for improvement  
-   - ‘This document does not provide specific routines, and we recommend that you refer to other documents or resources.’  
+4. **[One-line summary of other documentation (2nd-4th priority)]** 'Summary of other documentation...' 3.  
+   - 'Second-ranked document: ...'  
+   - 'Third-ranked document: ...'  
+   - '4th ranked document: ...'  
 
-Following these guidelines, **without forcing or modifying the original content**, be transparent about gaps, and allow users to see the most important information at a glance.
+5. **[Gap summary and follow-up suggestions]** [Gaps and suggestions for improvement  
+   - 'This document does not provide specific routines, so it is recommended to refer to other documents or resources.'  
+
+Follow these guidelines **without forcing or modifying the original content**, but be transparent about gaps and allow users to see the most important information at a glance.
+
+
+Translated with DeepL.com (free version)
 
 답변은 사용자의 쿼리와 동일한 언어로 해라
 

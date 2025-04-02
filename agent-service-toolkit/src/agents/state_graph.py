@@ -111,8 +111,18 @@ def retrieve(state: State):
     else:
         question = get_latest_human(state["messages"])
     
+    # 검색할 문서 수 제한 (기본 값은 retriever에 설정된 k 값)
+    max_docs = 5
+    
+    # 검색 결과 가져오기
     documents = retriever.invoke(question)
-    return {"documents": documents}
+    
+    # 검색 결과 중 상위 5개만 선택
+    top_documents = documents[:max_docs] if len(documents) > max_docs else documents
+    
+    print(f"검색된 문서 수: {len(documents)}, 사용할 문서 수: {len(top_documents)}")
+    
+    return {"documents": top_documents}
 
 def grade_documents(state: State):
     """
@@ -142,7 +152,8 @@ def generate(state: State):
     # ✅ 프롬프트를 직접 수정하여 논문을 나열하는 로직 추가
     prompt = f"""
     
-    논문이 영어로 되어 있다면,논문 영어 원본 정보와 원본을 한국어로 번역한 정보 두개 다 남기십시오.
+    모든 답변은 한국어로 하십시오.
+        
     매번 답변의 마지막에 출처를 남기세요.
         사용자의 질문: {question}
     

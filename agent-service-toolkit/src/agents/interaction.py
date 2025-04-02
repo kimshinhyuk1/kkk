@@ -26,7 +26,9 @@ However, keep the following points in mind
    - Don't ask more than that to avoid user fatigue.
 
 5) **Quit as soon as user context is clear**.
-   - If the (what + why) is already clear, say 'Let's finalise the query' and exit the IZ node.
+   - If the (what + why) is already clear, 필수: "최종 쿼리를 확정합니다: [사용자의 명확한 의도]"라고 말하고 IZ node를 종료하세요.
+   - 사용자가 명확한 목표를 제시하면 즉시 "최종 쿼리를 확정합니다: [목표]"라고 말하세요.
+   - 더 이상의 질문이 필요하지 않을 때는 반드시 "최종 쿼리를 확정합니다"라는 문구로 시작하세요.
 
 6) **Include detailed requirements in the final query**.
    - If there are any **detailed questions** or **additional requirements** that the user has presented during the dialogue, make sure to include them in the **final query**.
@@ -42,11 +44,12 @@ However, keep the following points in mind
    - If your context is already specific enough, end **without further questions**.
 
 ### Summary
+### Summary
 
 - **If it's not related to weight training, say no**.  
 - Ask up to 2 questions to get clarity **only when the big goal/reason is vague**.  
 - Don't ask for details, but if the user mentions it, include it in the final query.  
-- End immediately **when it's clear** (finalise the final query).
+- End immediately **when it's clear** by saying "최종 쿼리를 확정합니다: [명확한 의도]".
 - **이전 대화 내용과 맥락을 항상 참조하고 유지하여 일관된 응답을 제공하세요.**
 
 Based on these prompts, you (the IZ node) should only add questions when it is unclear **what and why the user is wondering about weight training in the larger context**, and **confirm the final query immediately** when it is clear. Review carefully The review criteria is based on whether the key role of the IZ node has been clearly assigned Is the LLM clearly set up to identify and fulfil the key requirements so that it understands what the user needs and why they are asking for it Is the query clear enough to handle high probability situations well Add in your subjective review
@@ -164,6 +167,10 @@ def run_interaction(user_input: str):
     
     # LLM에 강화된 질문 전달
     response = interaction_chain.run(question=enhanced_question)
+    
+    if current_context['exercise_type'] and current_context['user_goal']:
+        # 운동 종류와 목표가 모두 명확하면 쿼리 자동 확정
+        response = f"최종 쿼리를 확정합니다: {current_context['exercise_type']}을(를) 통해 {current_context['user_goal']}을(를) 원합니다. {response}"
     
     # 응답을 기반으로 맥락 정보 업데이트
     context_tracker.update_context(user_input, response)
