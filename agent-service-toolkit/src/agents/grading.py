@@ -68,6 +68,8 @@ To prioritize your users' needs,
 evaluate how specifically they address those needs (criterion 2),  
 and how well they are supported (criterion 3).  
 The goal is to forward (generate) only the top 3 articles to the next node.
+
+
 """
 
 grade_prompt = ChatPromptTemplate.from_messages([
@@ -81,6 +83,7 @@ grade_prompt = ChatPromptTemplate.from_messages([
         "- Otherwise => 'excluded': false, and assign a 'priority' (1 to 3)\n\n"
         "Return ONLY valid JSON, for example:\n"
         "{{\"excluded\":true}}\nOR\n{{\"excluded\":false, \"priority\": 1}}"
+         "No extra text."
     )
 ])
 
