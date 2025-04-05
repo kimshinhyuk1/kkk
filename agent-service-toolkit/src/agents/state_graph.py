@@ -1,6 +1,4 @@
-
-
-from typing import List, Annotated, TypedDict
+from typing import TypedDict, List, Optional
 from langgraph.graph.message import add_messages, RemoveMessage
 from langchain.schema import HumanMessage, AIMessage, Document
 from langchain_openai import ChatOpenAI
@@ -9,9 +7,18 @@ from langchain_community.tools.tavily_search import TavilySearchResults
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 import pprint
-from .pdf_loader import retriever
 from typing import List
 from langchain.schema import Document
+from langchain.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    filename='app.log',  # 파일로 로그 출력 (콘솔에 표시되지 않음)
+)
+logger = logging.getLogger(__name__)
+
 
 def format_docs(docs: List[Document]) -> str:
     return "\n".join(
@@ -23,9 +30,9 @@ def format_docs(docs: List[Document]) -> str:
 
 # --- State 정의 ---
 class State(TypedDict):
-    messages: Annotated[List, add_messages]  # HumanMessage와 AIMessage 객체들의 대화 내역
-    documents: Annotated[list, "filtered documents"]
-    summary: str  # 대화 요약본
+    messages: List[HumanMessage | AIMessage]
+    documents: Optional[List[Document]]
+    refined_query: Optional[str]
 
 # --- LLM 초기화 ---
 llm = ChatOpenAI(model="gpt-4o-mini")
@@ -44,30 +51,30 @@ def get_latest_ai(messages: List) -> str:
             return msg.content
     return ""
 
-#def summarize_chat_history(state: State):
-    summary = state.get("summary", "")
-    if not summary:
-        summary_template = "아래 대화 내용을 요약해주세요.\n"
-    else:
-        summary_template = (
-            f"지금까지의 대화 내용의 요약입니다.: {summary}\n"
-            "아래 주어진 추가된 대화 이력을 고려해서 새로운 요약을 만들어주세요.\n"
-            "[추가된 대화 이력]\n"
-        )
-    prompt = [HumanMessage(content=summary_template)] + state["messages"]
-    new_summary = llm.invoke(prompt).content
+# def summarize_chat_history(state: State):
+#    summary = state.get("summary", "")
+#    if not summary:
+#        summary_template = "아래 대화 내용을 요약해주세요.\n"
+#    else:
+#        summary_template = (
+#            f"지금까지의 대화 내용의 요약입니다.: {summary}\n"
+#            "아래 주어진 추가된 대화 이력을 고려해서 새로운 요약을 만들어주세요.\n"
+#            "[추가된 대화 이력]\n"
+#        )
+#    prompt = [HumanMessage(content=summary_template)] + state["messages"]
+#    new_summary = llm.invoke(prompt).content
 
-    delete_messages = [RemoveMessage(id=message.id) for message in state["messages"][:-2] if hasattr(message, "id")]
-    return {
-        "messages": delete_messages,
-        "summary": new_summary
-    }
+#    delete_messages = [RemoveMessage(id=message.id) for message in state["messages"][:-2] if hasattr(message, "id")]
+#    return {
+#        "messages": delete_messages,
+#        "summary": new_summary
+#    }
 
-#def should_summarize(state: State):
-    messages = state["messages"]
-    if len(messages) > 5:
-        return "summarize_chat_history"
-    return END
+# def should_summarize(state: State):
+#    messages = state["messages"]
+#    if len(messages) > 5:
+#        return "summarize_chat_history"
+#    return END
 
 def interaction(state: State):
     # 체인(예: interaction_chain) 임포트
@@ -78,20 +85,17 @@ def interaction(state: State):
     chain_output = interaction_chain.invoke({"question": question})
     final_query_str = chain_output["text"]  # 또는 "final_answer", "response", "content" 등
     
-    # 쿼리 확정 여부 확인 (예: "Let's finalise the query" 또는 "최종 쿼리를 확정합니다" 등의 문구 포함 여부)
     is_query_finalized = "최종 쿼리" in final_query_str or "finalise the query" in final_query_str.lower()
     
     return {
         "messages": [AIMessage(content=final_query_str)],
         "refined_query": final_query_str,
-        "query_finalized": is_query_finalized  # 쿼리 확정 여부 상태 추가
+        "query_finalized": is_query_finalized
     }
 
-# 2. 쿼리 확정 여부를 확인하는 라우터 함수 추가
 def check_query_status(state: State):
     print("--- [CHECK QUERY STATUS] ---")
     
-    # 쿼리 확정 여부 확인하여 Boolean 값만 반환
     is_finalized = state.get("query_finalized", False)
     
     if is_finalized:
@@ -102,70 +106,186 @@ def check_query_status(state: State):
     return is_finalized
 
 # --- 노드 함수들 ---
+from .pdf_loader import hybrid_retriever
+
+import logging
+logger = logging.getLogger(__name__)
+
 def retrieve(state: State):
-    print("--- [RETRIEVE] ---")
-    # 만약 'refined_query'가 state에 있으면 그걸 사용, 없으면 user 질문 fallback
-    refined_query = state.get("refined_query")
-    if refined_query:
-        question = refined_query
+    """
+    Retrieve relevant documents using a hybrid approach with query refinement
+    """
+    logger.info("--- [RETRIEVE] ---")
+    
+    # 사용자의 원래 질문 가져오기
+    original_query = get_latest_human(state["messages"])
+    
+    # 질문 개선을 위한 LLM 및 프롬프트 설정
+    llm = ChatOpenAI(model_name="gpt-4o", temperature=0)
+    
+    fitness_context_template = """[System / Instruction Prompt]
+
+당신은 “피트니스/웨이트 트레이닝 분야”에 특화된 **쿼리 리파이너**입니다.   *****먼저 반드시 사용자의 쿼리를 영어로 변환하십시오
+사용자의 원본 질문을 입력으로 받고, 이를 검색엔진에서 사용자의 쿼리를 만족할 수 있는 쿼리로 변환합니다.
+
+### 목표
+1. **사용자가 언급한 특정 운동**(바벨컬 등)과 **대상 근육군, 목표(근비대, 심미성 등)**가 충분히 반영되도록 **최종 쿼리를 확장**시키세요.
+2. **쿼리에서 불필요한 단어를 제거**하고, **핵심 키워드**에 집중하세요.
+3. **최종 쿼리를 확정**할 때, **주요 키워드를 중복**해서 쓰되,  
+   - “바벨컬, 바벨이두컬, straight bar curl, EZ curl, biceps curl” 같은 **유의어**를 적절히 포함하고,  
+   - “근비대, 근조직, 근섬유, hypertrophy, sculpted arms” 같은 **연관 맥락**도 활용하여 **임베딩 검색**에서 사용자의 맥락을 반영하는 단어들을 통해 높은 점수를 얻을 수 있도록 만드세요.  
+   - 단순히 “바벨컬 바벨컬 바벨컬”처럼 무의미한 반복보다는, **다양한 표현**과 **맥락**을 섞어서 자연스럽게 작성하세요.
+
+### 형식
+- **최종 출력**에는 **'개선된 쿼리'만** 담아주세요.  
+- 다른 설명이나 해설은 기재하지 마세요.
+
+---
+
+[Few-Shot Examples]
+
+1) **예시 입력**:
+“I'm a first-year and go to the gym twice a week. I'd like to make my biceps more defined with barbell curls, what's the best way to do it?”
+
+**예시 출력**:
+“barbell curl, biceps curl, EZ bar curl, aesthetic biceps hypertrophy,aesthetic biceps,EZ bar,biceps curl,biceps curl,twice weekly workout,intermediate 1 year old,hypertrophy-focused,various barbell curl variations,myofibrillar development”
+
+---
+
+2) **예시 입력**:
+“While weight training, do you think barbell curls or dumbbell curls are better for hypertrophy? I always want to get a better browline.”
+
+**예시 출력**:
+“barbell curl vs dumbbell curl, barbell curl vs dumbbell curl hypertrophy, barbell curl hypertrophy, dumbbell curl hypertrophy, barbell curl vs dumbbell curl, barbell curl dumbbell curl, biceps, biceps hypertrophy, biceps aesthetics, biceps hypertrophy, biceps, sculpted arms, aesthetics, isolation exercises, barbell biceps curl, EZ curl variations”
+
+---
+
+[실제 입력]
+
+{user_question}
+
+[지시사항]
+반드시 사용자의 쿼리를 영어로 먼저 변환하십시오.
+위 가이드라인(1~3번)을 충실히 이행하여 **최종 검색 쿼리**를 **자연스럽게** 작성하세요.
+본인이 작성해야 할 것은 **최종 쿼리만**입니다. 다른 설명은 넣지 마세요.
+
+    """
+    
+    query_refiner_prompt = PromptTemplate(
+        template=fitness_context_template,
+        input_variables=["question"]
+    )
+    
+    query_refiner_chain = query_refiner_prompt | llm | StrOutputParser()
+    
+    # 개선된 질문 생성
+    if state.get("refined_query"):
+        refined_query = state["refined_query"]
     else:
-        question = get_latest_human(state["messages"])
+        refined_query = query_refiner_chain.invoke({"question": original_query})
     
-    # 검색할 문서 수 제한 (기본 값은 retriever에 설정된 k 값)
-    max_docs = 5
+    logger.info(f"원래 질문: {original_query}")
+    logger.info(f"개선된 질문: {refined_query}")
     
-    # 검색 결과 가져오기
-    documents = retriever.invoke(question)
+    # 검색할 문서 수 제한
+    max_docs = 20
+    # 하이브리드 검색기를 통해 문서 검색
+    documents = hybrid_retriever.invoke(refined_query)
     
-    # 검색 결과 중 상위 5개만 선택
+    # 검색 결과 중 상위 문서 선택
     top_documents = documents[:max_docs] if len(documents) > max_docs else documents
     
-    print(f"검색된 문서 수: {len(documents)}, 사용할 문서 수: {len(top_documents)}")
+    logger.info(f"검색된 문서 수: {len(documents)}, 사용할 문서 수: {len(top_documents)}")
     
-    return {"documents": top_documents}
+    # 로깅: retrieve -> grade_documents 로 넘어가는 문서
+    logger.info("--- [RETRIEVE -> GRADE_DOC] Selected Documents ---")
+    for i, doc in enumerate(top_documents):
+        snippet = doc.page_content[:100].replace("\n", " ")
+        source = doc.metadata.get("source", "Unknown Source")
+        logger.info(f"  [{i+1}] source={source}, snippet={snippet}...")
+    logger.info("-------------------------------------------------\n")
+    
+    return {
+        "documents": top_documents,
+        "refined_query": refined_query
+    }
 
 def grade_documents(state: State):
     """
-    Processes retrieved documents without relevance scoring
+    - LLM 응답이 {"excluded": true} 또는 {"excluded": false, "priority": 1..3}라 가정
+    - excluded=true인 문서는 제외
+    - 우선순위 1..3 문서 중 최대 3개만 최종 반환
+    - 추가 메타데이터 없이 문서만 generate로 전달
     """
-    print("--- [PROCESS DOCUMENTS] ---")
-    
-    # Use refined_query if available in state, otherwise use the latest human message
-    if state.get("refined_query"):
-        question = state["refined_query"]
-    else:
-        question = get_latest_human(state["messages"])
-    
-    documents = state["documents"]
-    
-    # Simply return the documents without filtering
-    return {"documents": documents}
+    import json
+    from .grading import grader_chain
+    from typing import List
+    from langchain.schema import Document
+    docs = state.get("documents", [])
+    question = state.get("refined_query","")
+    kept = []
+
+    for doc in docs:
+        excerpt = doc.page_content
+        res = grader_chain.invoke({"doc_excerpt": excerpt, "question": question})
+        try:
+            data = json.loads(res.content)
+            if data.get("excluded") is True:
+                continue
+            prio = data.get("priority",999)
+            kept.append((doc,prio))
+        except:
+            continue
+
+    # sort prio ascending => up to 3
+    sorted_docs = sorted(kept, key=lambda x:x[1])[:3]
+    final_docs = [x[0] for x in sorted_docs]
+    return {"documents": final_docs}
+
+def filter_documents(docs, question):
+    """
+    - LLM 응답이 {"excluded": true} 또는 {"excluded": false, "priority": 1..3}라 가정
+    - excluded=true인 문서는 제외
+    - 우선순위(priority) 오름차순 정렬 후, 최대 3개만 반환
+    - 이 과정에서 사용자 UI 메시지를 추가로 생성하지 않는다.
+    """
+    from .grading import grader_chain
+    import json
+    kept = []
+    for doc in docs:
+        excerpt = doc.page_content
+        # grade_chain(LLM) 호출
+        res = grader_chain.invoke({"doc_excerpt": excerpt, "question": question})
+        try:
+            data = json.loads(res.content)
+            if data.get("excluded") is True:
+                continue
+            prio = data.get("priority", 999)
+            kept.append((doc, prio))
+        except:
+            # JSON 파싱 실패 등 => 제외
+            continue
+
+    # priority 오름차순 정렬 후 최대 3개
+    sorted_docs = sorted(kept, key=lambda x: x[1])[:3]
+    final_docs = [x[0] for x in sorted_docs]
+    return final_docs
+
+from .generation import generator_chain
 def generate(state: State):
-    print("--- [GENERATE] ---")
-    from .generation import generator_chain
+    docs = state.get("documents",[])
+    if not docs:
+        return {"messages": [AIMessage(content="No relevant documents found.")]}
+
+    doc_str = format_docs(docs)
     question = get_latest_human(state["messages"])
-    retrieved_docs = state["documents"]
-
-    if not retrieved_docs:
-        return {"messages": [AIMessage(content="해당 주제와 관련된 논문을 찾을 수 없습니다.")]}
-
-    # ✅ 프롬프트를 직접 수정하여 논문을 나열하는 로직 추가
     prompt = f"""
-    
-    모든 답변은 한국어로 하십시오.
-        
-    매번 답변의 마지막에 출처를 남기세요.
-        사용자의 질문: {question}
-    
-    
-    검색된 논문 목록:
-    {format_docs(retrieved_docs)}
-
+    사용자 질문: {question}
+    아래 3개 문서를 참고해 답변:
+    {doc_str}
     """
-
-    response = generator_chain.invoke({"question": question, "context": prompt})
-    return {"messages": [AIMessage(content=response.content)]}
-
+    res = generator_chain.invoke({"question": question, "context": prompt})
+    return {"messages": [AIMessage(content=res.content)]}
 
 def rewrite_query(state: State):
     print("--- [REWRITE QUERY] ---")
@@ -179,10 +299,8 @@ def web_search(state: State):
     print("--- [WEB SEARCH] ---")
     
     from langchain.schema import Document
-    # 최신 사용자 질문 추출
     question = get_latest_human(state["messages"])
     
-    # 웹 검색에 적합한 쿼리 생성을 위한 프롬프트 구성
     prompt = f"""
     사용자가 운동과 관련한 질문을 하였을 때 공신력 있는 사이트에서 정보를 가져와 대답하십시오.
     신뢰성,전문성,공신력이 뒷받침되는 자료이여야 합니다.
@@ -191,15 +309,12 @@ def web_search(state: State):
     
     검색 쿼리:
     """
-    # LLM을 사용해 정제된 검색 쿼리 생성
     refined_query = llm.invoke([HumanMessage(content=prompt)]).content.strip()
     print(f"Refined search query: {refined_query}")
     
-    # 생성된 쿼리를 이용해 웹 검색 수행
     web_search_tool = TavilySearchResults(k=3)
     docs = web_search_tool.invoke(refined_query)
     
-    # 각 검색 결과가 dict 또는 str 일 경우 모두 처리
     web_results = []
     for doc in docs:
         if isinstance(doc, dict):
@@ -220,7 +335,6 @@ def route_question(state: State):
 
     if source.source == "web_search":
         print("--- ROUTE QUESTION TO WEB SEARCH ---")
-        # 여기서 state["source"]를 web_search로 설정
         state["source"] = "web_search"
         return "web"
     elif source.source == "vectorstore":
@@ -236,16 +350,13 @@ def decide_to_generate(state: State):
     print("--- [ASSESS GRADED DOCUMENTS] ---")
     documents = state["documents"]
 
-    # rewrite_query 횟수를 저장할 카운터(없으면 0으로 초기화)
     rewrite_count = state.get("rewrite_count", 0)
 
     if not documents:
-        # 문서가 전혀 남아 있지 않다면 rewrite_query로 유도
         rewrite_count += 1
         state["rewrite_count"] = rewrite_count
         print(f"     --- [ALL DOCUMENTS ARE NOT RELEVANT, rewrite #{rewrite_count}] ---")
 
-        # rewrite_query가 3회 이상 반복되면 web_search로 전환
         if rewrite_count >= 3:
             print("--- [REWRITE LIMIT REACHED => GO TO WEB_SEARCH] ---")
             return "web_search"
@@ -253,7 +364,6 @@ def decide_to_generate(state: State):
             return "rewrite_query"
     else:
         print("     --- [DECISION: GENERATE] ---")
-        # 문서가 유효하면 rewrite 횟수 초기화
         state["rewrite_count"] = 0
         return "generate"
     
@@ -264,20 +374,13 @@ def grade_generation_v_document_question(state: State):
     question = get_latest_human(state["messages"])
     generation = get_latest_ai(state["messages"])
 
-
-
-    # 1) web_search 경로라면 문서 검사(환각 검사)를 건너뛰고,
-    #    "web_search로 전환되었다"는 안내 메시지를 남김.
     if state.get("source") == "web_search":
         print("--- [SKIPPING HALLUCINATION CHECK FOR WEB SEARCH] ---")
-        # 사용자에게 안내할 메시지를 AI 응답으로 추가 (선택 사항)
         state["messages"].append(
             AIMessage(content="(안내) 문서 대신 웹 검색 결과를 참고해 답변했습니다. 필요 시 추가 검색 가능합니다.")
         )
-        # 문서 검증 절차 없이 바로 'useful' 등으로 리턴하여 이후 노드로 진행
         return "useful"
 
-    # 2) 기존 문서 기반 환각 검사 로직
     docs = state["documents"]
     score = hallucination_checker_chain.invoke(
         {
@@ -294,7 +397,7 @@ def grade_generation_v_document_question(state: State):
 
         if answer_score == "yes":
             print("--- [GENERATION ADDRESSES QUESTION] ---")
-            return "useful"  # ✅ 최종 응답을 가공하는 단계로 이동
+            return "useful"
         else:
             print("--- [GENERATION DOES NOT ADDRESS QUESTION] ---")
             return "not useful"
@@ -325,49 +428,53 @@ When a user receives a paper in English as an answer, do you want to translate i
     response = llm_generator.invoke(prompt)
     new_ai_message = AIMessage(content=response.content)
     return {"messages": [new_ai_message]}
+
+def filter_node(state: State):
+    from .grading import grader_chain  # grader_chain은 앞서 예시 grader_chain과 동일
+    docs = state.get("documents", [])
+    question = state.get("refined_query", "")
+
+    filtered_docs = filter_documents(docs, question)  # 위에서 작성한 함수 호출
+    # state에 최종 문서만 저장
+    return {"documents": filtered_docs}
+
 # --- 그래프 구성 ---
 flow = StateGraph(State)
-#flow.add_node("summarize_chat_history", summarize_chat_history)
-import pprint
-
-# 기존 노드 등록
 flow.add_node("retrieve", retrieve)
 flow.add_node("generate", generate)
 flow.add_node("rewrite_query", rewrite_query)
 flow.add_node("web_search", web_search)
 flow.add_node("direct_generate", direct_generate)
-flow.add_node("interaction",interaction)
-flow.add_node("grade_documents",grade_documents)
+flow.add_node("interaction", interaction)
+flow.add_node("grade_documents", grade_documents)
+flow.add_node("filter_node", filter_node)  # 새로 추가
 
-# 엣지 수정
+# 엣지 설정
 flow.add_edge(START, "interaction")
-# 조건부 엣지 수정 - 올바른 메서드 사용
 
 flow.add_conditional_edges(
     "interaction",
     check_query_status,
     {
-        True: "retrieve",     # 쿼리가 최종이면 retrieve로
-        False: END  # 쿼리가 최종이 아니면 interaction으로 다시
+        True: "retrieve",
+        False: END
     }
 )
 
 flow.add_edge("retrieve", "grade_documents")
-flow.add_edge("grade_documents", "generate")
+flow.add_edge("grade_documents", "filter_node")
+flow.add_edge("filter_node", "generate")
 flow.add_edge("generate", END)
-
 
 memory = MemorySaver()
 graph = flow.compile(checkpointer=memory)
 
-
-def stream_graph(inputs, config, exclude_node=[]):
+def stream_graph(inputs, config):
     for output in graph.stream(inputs, config, stream_mode="updates"):
-        for k, v in output.items():
-            if k not in exclude_node:
-                pprint.pprint(f"Output from node '{k}':")
-                pprint.pprint("---")
-                pprint.pprint(v, indent=2, width=80, depth=None)
-        pprint.pprint("\n---\n")
-
+        # ❌ 노드별로 pprint하지 않고,
+        # 단순히 루프는 돌지만, 프론트엔드로는 최종 결과만 전달
+        pass
+    
+    # 최종 output을 별도로 gather하여 return or print
+    # 사용자에겐 generate 노드의 메시지 등만 노출
 

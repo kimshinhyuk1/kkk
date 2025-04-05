@@ -1,74 +1,88 @@
-# grading.py
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
-# 시스템 메시지: 모델에게 역할과 평가 기준 지시
 system = """
+You are grade_doc. The end goal is to pass documents from the search node to the generate node in priority order based on the evaluation criteria.
 
-You are grade_doc. Your end goal is to deliver documents from the retrive node to the generate node in a prioritised order based on the evaluation criteria designed using the user's goals as a baseline. 
+Documents are prioritized up to a total of three, and only those three are passed to the next node (generate)
 
-Make sure you understand the user's goals, which are the basis for the evaluation criteria, and then forward the documents to the generate node based on the evaluation criteria.
-<User's goal
-1) There is a specific need to be addressed (Criterion 1, required)
-2) I'm curious about why I need that need (Criterion 2)
-3) Prefer information that focuses precisely on the user's question/area (Criterion 3)
-4) Value scientific evidence or professional references (Criterion 4)
+<evaluation criteria>
+First, the most important evaluation criteria.
 
-### Evaluation Criteria 1. **Criterion (1) Required**.  
-   - If the document has absolutely no information that addresses your needs, exclude it.
+Criterion 1. Does it meet the user's needs (what must be met)  
+Prioritize “what the user's needs are” based on the user's query,  
+and immediately exclude documents that do not meet those needs at all.
 
-2. **Criteria (2), (3), and (4) are judged as ‘Satisfactory/Partially Satisfactory/Not Satisfactory’**.  
-   - Example) ‘Partially satisfied’ means that the information is mentioned, but not enough.
+Example: Given the final query “I need advice on elbow position or wrist angle to make my biceps more efficient when doing barbell curls,” an article on “Exercises for pregnant women” is immediately eliminated because it's not on topic at all.
 
-3. **Priority Calculation  
-   - Documents with more ‘Fully satisfied’ from (2) to (4) are the highest priority.  
-   - If the number of satisfactions is the same, compare the subdivisions in the order (2)→(3)→(4):  
-     - Example: If both documents have 2 satisfies, compare (2) first → if there is no difference, then (3) → (4).  
-     - If still tied, pass them all to the generate node with the same ranking.
+In other words, it doesn't matter how formally good an article is or how much science it has, if it doesn't address user needs, it won't be evaluated.
 
-4. **Explanation when partially satisfied  
-   - Please make a short note of what is lacking, e.g. ‘only 1 expert opinion with simple evidence’.
+We emphasize this again. If the document does not satisfy criterion 1, it is not a priority. Exclude it.
 
-5. **Edge cases  
-   - If only (1) is satisfied, does it pass? → No. (1) is required, but if none of (2) to (4) are met, it may not be very helpful to the user. You can still send it to the creation node if you want.  
-   - When multiple documents have different strengths, you can pass them all if you think it's beneficial to the user.
+2) Criterion 2: “Is the document focused relatively precisely on the user's needs?”  
+“Satisfied” if the document focuses relatively precisely on the user's question (=specific biceps movement, elbow-wrist angle)  
+“Partially satisfied” if mentioned, but relatively broad (=mostly different from the requirement) or only briefly mentioned  
+If it is not mentioned at all, it has already been eliminated.
 
-### Final output format (example)
+3) Criterion 3: “Credibility of scientific evidence, expert opinion, etc.”  
+“Satisfactory” if the document supports the solution to the user need with sufficient scientific evidence (studies, experiments, expert opinions, references)  
+“Partially satisfactory” if there is some evidence but not enough  
+“Unsatisfactory” if there is little evidence or low confidence
 
-We recommend a structured reporting format for your documentation. Example:
+Prioritization rules:
+(1) If the user need is not satisfied, it is excluded (priority X).  
+(2) The more “satisfied” entries in (2) and (3), the higher the priority.  
+(3) If there is an equal number of “fully satisfied”, break the tie by comparing (2) → (3).  
+(4) Still equal? Same priority is acceptable.
 
-[ { ‘doc_id’: ‘docA’, “criterion_1”: ‘Satisfied’, “criterion_2”: ‘Partially satisfied’, “criterion_3”: ‘Satisfied’, “criterion_4”: ‘Not satisfied’, “partial_explanation”: ‘Scientific evidence is only one line of expert opinion’, “priority”: 1 }, ... ]
+Only up to three documents are prioritized, and only the top three documents are passed to the next node (generate).
 
-- Although this format does not necessarily have to be followed,  
-- (1) to (4) need only be stated, along with the priority and explanation of the shortfall.
+Explanation of partially satisfactory:  
+- Briefly state what is lacking, such as “Only one expert opinion with simple evidence”.
 
-### Main purpose
+Example of an organized reporting format for documents:
 
-- The main purpose is not the ranking itself, but the selection of **‘documents that users trust and that meet their needs + reasons’**.  
-- Even if there are a lot of ties, move them all to the Create node if it's beneficial.  
-- If there are weaknesses, such as ‘partially met’ or ‘lack of evidence’, be honest and note them down so that the Generate node can reference them.
+[
+  {{
+    "criterion_1": "Satisfied",
+    "criterion_2": "Satisfied",
+    "criterion_3": "Partially satisfied",
+    "deficiency": "Only 1 paragraph of expert opinion",
+    "priority": 1
+  }},
+  {{
+    "criterion_1": "Satisfied",
+    "criterion_2": "Partially satisfied",
+    "criterion_3": "Unsatisfactory",
+    "deficiency": "No studies or references cited",
+    "priority": 2
+  }}
+]
 
-Translated with DeepL.com (free version)"""
+- You don't have to follow this format exactly.  
+- Just include (1) to (3) with a prioritization and a description of the deficiency.
 
-# 프롬프트 템플릿: 문서와 질문을 전달하고 평가를 요청
-grade_prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", system),
-        (
-            "human",
-            "Retrieved document:\n\n{document}\n\n"
-            "User question: {question}\n\n"
-            "Based on the criteria above:\n"
-            "1) Does the document contain information that solves the user's requirement?\n"
-            "2) Is it domain-specific rather than generic?\n"
-            "3) Are there scientific references or experiments mentioned?\n"
-            "Please provide a concise explanation and conclusion."
-        ),
-    ]
-)
+Main purpose:
 
-# LLM 설정
+To prioritize your users' needs,  
+evaluate how specifically they address those needs (criterion 2),  
+and how well they are supported (criterion 3).  
+The goal is to forward (generate) only the top 3 articles to the next node.
+"""
+
+grade_prompt = ChatPromptTemplate.from_messages([
+    ("system", system),
+    (
+        "human",
+        "Document excerpt:\n\n{doc_excerpt}\n\n"
+        "User question: {question}\n\n"
+        "Based on the new guidelines, please decide:\n"
+        "- If the document does NOT meet user needs at all => 'excluded': true\n"
+        "- Otherwise => 'excluded': false, and assign a 'priority' (1 to 3)\n\n"
+        "Return ONLY valid JSON, for example:\n"
+        "{{\"excluded\":true}}\nOR\n{{\"excluded\":false, \"priority\": 1}}"
+    )
+])
+
 llm = ChatOpenAI(model="gpt-4o", temperature=0)
-
-# 프롬프트와 LLM을 연결 (구조화된 출력 X)
 grader_chain = grade_prompt | llm

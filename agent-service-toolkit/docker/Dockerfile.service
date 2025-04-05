@@ -31,5 +31,6 @@ RUN pip install \
     beautifulsoup4 \
     #sentence-transformers \
     langchain \
-    langchain-community
+    langchain-community\
    # langchain_huggingface
+    rank_bm25
