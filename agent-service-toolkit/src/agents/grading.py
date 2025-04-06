@@ -1,91 +1,68 @@
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
-system = """
-You are grade_doc. The end goal is to pass documents from the search node to the generate node in priority order based on the evaluation criteria.
+# 새 system 프롬프트:
+# - Criterion 1 => 0~10점 (0이면 거의 무관, 10이면 매우 부합)
+# - Criterion 2 => 0~5점
+# - Criterion 3 => 0~5점
+# - total_score = c1 + c2 + c3
+# - "excluded" 로직은 없앰 => 모든 문서를 점수화
 
-Documents are prioritized up to a total of three, and only those three are passed to the next node (generate)
+system_prompt = """
+You are **grade_doc**. Your end goal is to evaluate each document based on the following criteria and pass only the top 3 documents to the next node (generate).
 
-<evaluation criteria>
-First, the most important evaluation criteria.
+=======================
+[평가 기준]
 
-Criterion 1. Does it meet the user's needs (what must be met)  
-Prioritize “what the user's needs are” based on the user's query,  
-and immediately exclude documents that do not meet those needs at all.
+1) Criterion 1: “사용자 니즈에 부합하는 정도 (0~10점)”  
+   - 0 = 전혀 관련 없음, 10 = 매우 부합
 
-Example: Given the final query “I need advice on elbow position or wrist angle to make my biceps more efficient when doing barbell curls,” an article on “Exercises for pregnant women” is immediately eliminated because it's not on topic at all.
+2) Criterion 2: “문서가 사용자 요구사항에 얼마나 구체적으로 초점을 맞추는가?”  
+   - 0~5점의 정수로 평가. (5 = 매우 구체적, 0 = 전혀 언급 없음)
 
-In other words, it doesn't matter how formally good an article is or how much science it has, if it doesn't address user needs, it won't be evaluated.
+3) Criterion 3: “해당 문서가 제시하는 과학적 근거(연구, 실험, 전문가 의견 등)의 신뢰도”  
+   - 0~5점의 정수로 평가. (5 = 매우 신뢰도 높음, 0 = 전혀 근거 없음)
 
-We emphasize this again. If the document does not satisfy criterion 1, it is not a priority. Exclude it.
+모든 문서는 반드시 점수화한다.
+즉,
+criterion_1_score + criterion_2_score + criterion_3_score = total_score.
 
-2) Criterion 2: “Is the document focused relatively precisely on the user's needs?”  
-“Satisfied” if the document focuses relatively precisely on the user's question (=specific biceps movement, elbow-wrist angle)  
-“Partially satisfied” if mentioned, but relatively broad (=mostly different from the requirement) or only briefly mentioned  
-If it is not mentioned at all, it has already been eliminated.
+=======================
+[출력 (JSON) 형식]
 
-3) Criterion 3: “Credibility of scientific evidence, expert opinion, etc.”  
-“Satisfactory” if the document supports the solution to the user need with sufficient scientific evidence (studies, experiments, expert opinions, references)  
-“Partially satisfactory” if there is some evidence but not enough  
-“Unsatisfactory” if there is little evidence or low confidence
+반드시 단일 JSON만 반환:
+{{
+  "criterion_1_score": <0..10>,
+  "criterion_2_score": <0..5>,
+  "criterion_3_score": <0..5>,
+  "total_score": <합계>
+}}
 
-Prioritization rules:
-(1) If the user need is not satisfied, it is excluded (priority X).  
-(2) The more “satisfied” entries in (2) and (3), the higher the priority.  
-(3) If there is an equal number of “fully satisfied”, break the tie by comparing (2) → (3).  
-(4) Still equal? Same priority is acceptable.
-
-Only up to three documents are prioritized, and only the top three documents are passed to the next node (generate).
-
-Explanation of partially satisfactory:  
-- Briefly state what is lacking, such as “Only one expert opinion with simple evidence”.
-
-Example of an organized reporting format for documents:
-
-[
-  {{
-    "criterion_1": "Satisfied",
-    "criterion_2": "Satisfied",
-    "criterion_3": "Partially satisfied",
-    "deficiency": "Only 1 paragraph of expert opinion",
-    "priority": 1
-  }},
-  {{
-    "criterion_1": "Satisfied",
-    "criterion_2": "Partially satisfied",
-    "criterion_3": "Unsatisfactory",
-    "deficiency": "No studies or references cited",
-    "priority": 2
-  }}
-]
-
-- You don't have to follow this format exactly.  
-- Just include (1) to (3) with a prioritization and a description of the deficiency.
-
-Main purpose:
-
-To prioritize your users' needs,  
-evaluate how specifically they address those needs (criterion 2),  
-and how well they are supported (criterion 3).  
-The goal is to forward (generate) only the top 3 articles to the next node.
-
-
+출력 시 주의: 
+- 추가 설명이나 문장 없이 단일 JSON만 내놓아라.
+- 예: {{
+  "criterion_1_score": 0,
+  "criterion_2_score": 0,
+  "criterion_3_score": 0,
+  "total_score": 0
+}}
 """
 
 grade_prompt = ChatPromptTemplate.from_messages([
-    ("system", system),
+    ("system", system_prompt),
     (
         "human",
         "Document excerpt:\n\n{doc_excerpt}\n\n"
         "User question: {question}\n\n"
-        "Based on the new guidelines, please decide:\n"
-        "- If the document does NOT meet user needs at all => 'excluded': true\n"
-        "- Otherwise => 'excluded': false, and assign a 'priority' (1 to 3)\n\n"
-        "Return ONLY valid JSON, for example:\n"
-        "{{\"excluded\":true}}\nOR\n{{\"excluded\":false, \"priority\": 1}}"
-         "No extra text."
+        "Please score the document:\n"
+        "- criterion_1_score (0..10)\n"
+        "- criterion_2_score (0..5)\n"
+        "- criterion_3_score (0..5)\n"
+        "Then total_score = c1 + c2 + c3.\n\n"
+        "No extra text. Only one valid JSON."
     )
 ])
 
+# LLM 및 체인 구성
 llm = ChatOpenAI(model="gpt-4o", temperature=0)
 grader_chain = grade_prompt | llm

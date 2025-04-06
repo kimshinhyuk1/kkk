@@ -3,8 +3,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
 template = """Your end goal is to convey information to the user by **keeping the original content intact**, but **making it more readable and clearly indicating what is lacking**.
- In the grade_doc node, you will receive up to 3 documents (priority #1, #2, #3) that have been curated based on the user's needs (problem) and why, specific actions, scientific rationale, and some 'partially met' or 'lacking' criteria.
-Final Deliverable (Structure)
+In the grade_doc node, you receive up to 3 documents (ranked #1, #2, #3) that address the user's need.
 
 Structure is 
 [Rationale for document selection]Focus:5%

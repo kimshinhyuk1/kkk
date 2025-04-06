@@ -212,80 +212,75 @@ def retrieve(state: State):
 
 def grade_documents(state: State):
     """
-    - LLM 응답이 {"excluded": true} 또는 {"excluded": false, "priority": 1..3}라 가정
-    - excluded=true인 문서는 제외
-    - 우선순위 1..3 문서 중 최대 3개만 최종 반환
-    - 추가 메타데이터 없이 문서만 generate로 전달
+    => grading.py의 grader_chain 사용
+       c1=0..10, c2=0..5, c3=0..5 => total_score로 정렬
     """
     import json
     from .grading import grader_chain
-    from typing import List
-    from langchain.schema import Document
     docs = state.get("documents", [])
-    question = state.get("refined_query","")
-    kept = []
+    question = state.get("refined_query", "")
 
+    scored_docs = []
     for doc in docs:
         excerpt = doc.page_content
         res = grader_chain.invoke({"doc_excerpt": excerpt, "question": question})
         try:
             data = json.loads(res.content)
-            if data.get("excluded") is True:
-                continue
-            prio = data.get("priority",999)
-            kept.append((doc,prio))
+            # data 예) {"criterion_1_score":0,"criterion_2_score":5,"criterion_3_score":5,"total_score":10}
+            score = data.get("total_score", 0)
+            scored_docs.append((doc, score))
         except:
-            continue
+            # JSON 파싱 실패 => score=0
+            scored_docs.append((doc, 0))
 
-    # sort prio ascending => up to 3
-    sorted_docs = sorted(kept, key=lambda x:x[1])[:3]
+    # 점수 내림차순 정렬 => 상위 3개
+    sorted_docs = sorted(scored_docs, key=lambda x: x[1], reverse=True)[:3]
     final_docs = [x[0] for x in sorted_docs]
     return {"documents": final_docs}
 
 def filter_documents(docs, question):
     """
-    - LLM 응답이 {"excluded": true} 또는 {"excluded": false, "priority": 1..3}라 가정
-    - excluded=true인 문서는 제외
-    - 우선순위(priority) 오름차순 정렬 후, 최대 3개만 반환
-    - 이 과정에서 사용자 UI 메시지를 추가로 생성하지 않는다.
+    (optional) 'filter_node'에서 추가 필터링
     """
     from .grading import grader_chain
     import json
-    kept = []
+
+    scored = []
     for doc in docs:
         excerpt = doc.page_content
-        # grade_chain(LLM) 호출
         res = grader_chain.invoke({"doc_excerpt": excerpt, "question": question})
         try:
             data = json.loads(res.content)
-            if data.get("excluded") is True:
-                continue
-            prio = data.get("priority", 999)
-            kept.append((doc, prio))
+            sc = data.get("total_score", 0)
+            scored.append((doc, sc))
         except:
-            # JSON 파싱 실패 등 => 제외
-            continue
+            scored.append((doc, 0))
 
-    # priority 오름차순 정렬 후 최대 3개
-    sorted_docs = sorted(kept, key=lambda x: x[1])[:3]
+    # 내림차순 -> 상위3
+    sorted_docs = sorted(scored, key=lambda x: x[1], reverse=True)[:3]
     final_docs = [x[0] for x in sorted_docs]
     return final_docs
-
-from .generation import generator_chain
 def generate(state: State):
+    """
+    => 최종 답변
+    """
+    from .generation import generator_chain
+    from langchain.schema import AIMessage
+
     docs = state.get("documents",[])
     if not docs:
-        return {"messages": [AIMessage(content="No relevant documents found.")]}
+        return {"messages":[AIMessage(content="No relevant documents found.")]}
 
     doc_str = format_docs(docs)
     question = get_latest_human(state["messages"])
     prompt = f"""
     사용자 질문: {question}
-    아래 3개 문서를 참고해 답변:
+    아래 문서(최대3개)를 참고해 답변:
     {doc_str}
     """
     res = generator_chain.invoke({"question": question, "context": prompt})
-    return {"messages": [AIMessage(content=res.content)]}
+    # 최종 사용자에게 노출되는 메시지
+    return {"messages":[AIMessage(content=res.content)]}
 
 def rewrite_query(state: State):
     print("--- [REWRITE QUERY] ---")
@@ -470,11 +465,8 @@ memory = MemorySaver()
 graph = flow.compile(checkpointer=memory)
 
 def stream_graph(inputs, config):
+    final_output = None
     for output in graph.stream(inputs, config, stream_mode="updates"):
-        # ❌ 노드별로 pprint하지 않고,
-        # 단순히 루프는 돌지만, 프론트엔드로는 최종 결과만 전달
-        pass
-    
-    # 최종 output을 별도로 gather하여 return or print
-    # 사용자에겐 generate 노드의 메시지 등만 노출
-
+        # 중간 output은 무시
+        final_output = output
+    return final_output
