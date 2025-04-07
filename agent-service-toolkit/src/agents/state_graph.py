@@ -125,50 +125,7 @@ def retrieve(state: State):
     
     fitness_context_template = """[System / Instruction Prompt]
 
-당신은 “피트니스/웨이트 트레이닝 분야”에 특화된 **쿼리 리파이너**입니다.   *****먼저 반드시 사용자의 쿼리를 영어로 변환하십시오
-사용자의 원본 질문을 입력으로 받고, 이를 검색엔진에서 사용자의 쿼리를 만족할 수 있는 쿼리로 변환합니다.
-
-### 목표
-1. **사용자가 언급한 특정 운동**(바벨컬 등)과 **대상 근육군, 목표(근비대, 심미성 등)**가 충분히 반영되도록 **최종 쿼리를 확장**시키세요.
-2. **쿼리에서 불필요한 단어를 제거**하고, **핵심 키워드**에 집중하세요.
-3. **최종 쿼리를 확정**할 때, **주요 키워드를 중복**해서 쓰되,  
-   - “바벨컬, 바벨이두컬, straight bar curl, EZ curl, biceps curl” 같은 **유의어**를 적절히 포함하고,  
-   - “근비대, 근조직, 근섬유, hypertrophy, sculpted arms” 같은 **연관 맥락**도 활용하여 **임베딩 검색**에서 사용자의 맥락을 반영하는 단어들을 통해 높은 점수를 얻을 수 있도록 만드세요.  
-   - 단순히 “바벨컬 바벨컬 바벨컬”처럼 무의미한 반복보다는, **다양한 표현**과 **맥락**을 섞어서 자연스럽게 작성하세요.
-
-### 형식
-- **최종 출력**에는 **'개선된 쿼리'만** 담아주세요.  
-- 다른 설명이나 해설은 기재하지 마세요.
-
----
-
-[Few-Shot Examples]
-
-1) **예시 입력**:
-“I'm a first-year and go to the gym twice a week. I'd like to make my biceps more defined with barbell curls, what's the best way to do it?”
-
-**예시 출력**:
-“barbell curl, biceps curl, EZ bar curl, aesthetic biceps hypertrophy,aesthetic biceps,EZ bar,biceps curl,biceps curl,twice weekly workout,intermediate 1 year old,hypertrophy-focused,various barbell curl variations,myofibrillar development”
-
----
-
-2) **예시 입력**:
-“While weight training, do you think barbell curls or dumbbell curls are better for hypertrophy? I always want to get a better browline.”
-
-**예시 출력**:
-“barbell curl vs dumbbell curl, barbell curl vs dumbbell curl hypertrophy, barbell curl hypertrophy, dumbbell curl hypertrophy, barbell curl vs dumbbell curl, barbell curl dumbbell curl, biceps, biceps hypertrophy, biceps aesthetics, biceps hypertrophy, biceps, sculpted arms, aesthetics, isolation exercises, barbell biceps curl, EZ curl variations”
-
----
-
-[실제 입력]
-
-{user_question}
-
-[지시사항]
-반드시 사용자의 쿼리를 영어로 먼저 변환하십시오.
-위 가이드라인(1~3번)을 충실히 이행하여 **최종 검색 쿼리**를 **자연스럽게** 작성하세요.
-본인이 작성해야 할 것은 **최종 쿼리만**입니다. 다른 설명은 넣지 마세요.
-
+    아무 변환 없이 최종 쿼리 그대로 변환하십시오오
     """
     
     query_refiner_prompt = PromptTemplate(
@@ -187,33 +144,35 @@ def retrieve(state: State):
     logger.info(f"원래 질문: {original_query}")
     logger.info(f"개선된 질문: {refined_query}")
     
-    # 검색할 문서 수 제한
-    max_docs = 50
-    # 하이브리드 검색기를 통해 문서 검색
+    # --- (1) max_docs 제거 ---
+    # max_docs = 20  # <-- 이 줄 삭제 or 주석 처리
+    
+    # --- (2) 전체 문서 그대로 반환 ---
     documents = hybrid_retriever.invoke(refined_query)
     
-    # 검색 결과 중 상위 문서 선택
-    top_documents = documents[:max_docs] if len(documents) > max_docs else documents
+    logger.info(f"검색된 문서 수: {len(documents)}, 사용할 문서 수: {len(documents)}")
     
-    logger.info(f"검색된 문서 수: {len(documents)}, 사용할 문서 수: {len(top_documents)}")
-    
-    # 로깅: retrieve -> grade_documents 로 넘어가는 문서
     logger.info("--- [RETRIEVE -> GRADE_DOC] Selected Documents ---")
-    for i, doc in enumerate(top_documents):
+    for i, doc in enumerate(documents):
         snippet = doc.page_content[:100].replace("\n", " ")
         source = doc.metadata.get("source", "Unknown Source")
         logger.info(f"  [{i+1}] source={source}, snippet={snippet}...")
     logger.info("-------------------------------------------------\n")
     
     return {
-        "documents": top_documents,
+        "documents": documents,  # <-- 그냥 documents 전체 반환
         "refined_query": refined_query
     }
 
 def grade_documents(state: State):
     """
-    => grading.py의 grader_chain 사용
-       c1=0..10, c2=0..5, c3=0..5 => total_score로 정렬
+    => grader_chain를 통해
+       {
+         "사용자의 쿼리": "...",
+         "사용자의 요구사항을 해결할 내용이 있는지": "...",
+         "criterion_score": 7
+       }
+       이런 JSON이 반환.
     """
     import json
     from .grading import grader_chain
@@ -223,25 +182,33 @@ def grade_documents(state: State):
     scored_docs = []
     for doc in docs:
         excerpt = doc.page_content
-        res = grader_chain.invoke({"doc_excerpt": excerpt, "question": question})
+        # 1) LLM 호출
+        res = grader_chain.invoke({
+            "doc_excerpt": excerpt,
+            "question": question
+        })
         try:
+            # 2) JSON 파싱
             data = json.loads(res.content)
-            # data 예) {"criterion_1_score":0,"criterion_2_score":5,"criterion_3_score":5,"total_score":10}
-            score = data.get("total_score", 0)
+            # ex) {"사용자의 쿼리": "...", "사용자의 요구사항을 해결할 내용이 있는지": "...", "criterion_score": 7}
+            score = data.get("criterion_score", 0)
             scored_docs.append((doc, score))
+
+            # (원한다면) state["messages"] 등에 기록할 수도 있음
+            # user_query_text = data.get("사용자의 쿼리", "")
+            # doc_satisfaction = data.get("사용자의 요구사항을 해결할 내용이 있는지", "")
+            # logger.info(f"[grade_doc] user_query={user_query_text}, doc_sat={doc_satisfaction}, score={score}")
+
         except:
             # JSON 파싱 실패 => score=0
             scored_docs.append((doc, 0))
 
-    # 점수 내림차순 정렬 => 상위 3개
+    # 3) 점수 높은 순 상위 3개
     sorted_docs = sorted(scored_docs, key=lambda x: x[1], reverse=True)[:3]
     final_docs = [x[0] for x in sorted_docs]
     return {"documents": final_docs}
 
 def filter_documents(docs, question):
-    """
-    (optional) 'filter_node'에서 추가 필터링
-    """
     from .grading import grader_chain
     import json
 
@@ -251,38 +218,32 @@ def filter_documents(docs, question):
         res = grader_chain.invoke({"doc_excerpt": excerpt, "question": question})
         try:
             data = json.loads(res.content)
-            sc = data.get("total_score", 0)
-            scored.append((doc, sc))
+            score = data.get("criterion_score", 0)
+            scored.append((doc, score))
         except:
             scored.append((doc, 0))
 
-    # 내림차순 -> 상위3
     sorted_docs = sorted(scored, key=lambda x: x[1], reverse=True)[:3]
     final_docs = [x[0] for x in sorted_docs]
     return final_docs
+
 def generate(state: State):
-    """
-    => 최종 답변
-    """
     from .generation import generator_chain
     from langchain.schema import AIMessage
 
-    docs = state.get("documents",[])
+    docs = state.get("documents", [])
     if not docs:
-        return {"messages":[AIMessage(content="No relevant documents found.")]}
+        return {"messages": [AIMessage(content="No relevant documents found.")]}
 
     doc_str = format_docs(docs)
     question = get_latest_human(state["messages"])
     prompt = f"""
     사용자 질문: {question}
-    아래 문서(최대3개)를 참고해 답변:
+    문서의 출처는 밝혀라
     {doc_str}
-    그리고 마지막에 출처는 반드시 포함해
-
     """
     res = generator_chain.invoke({"question": question, "context": prompt})
-    # 최종 사용자에게 노출되는 메시지
-    return {"messages":[AIMessage(content=res.content)]}
+    return {"messages": [AIMessage(content=res.content)]}
 
 def rewrite_query(state: State):
     print("--- [REWRITE QUERY] ---")
