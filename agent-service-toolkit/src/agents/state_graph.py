@@ -188,7 +188,7 @@ def retrieve(state: State):
     logger.info(f"개선된 질문: {refined_query}")
     
     # 검색할 문서 수 제한
-    max_docs = 20
+    max_docs = 50
     # 하이브리드 검색기를 통해 문서 검색
     documents = hybrid_retriever.invoke(refined_query)
     
@@ -277,6 +277,8 @@ def generate(state: State):
     사용자 질문: {question}
     아래 문서(최대3개)를 참고해 답변:
     {doc_str}
+    그리고 마지막에 출처는 반드시 포함해
+
     """
     res = generator_chain.invoke({"question": question, "context": prompt})
     # 최종 사용자에게 노출되는 메시지

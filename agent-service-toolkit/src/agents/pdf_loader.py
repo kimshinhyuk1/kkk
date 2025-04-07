@@ -11,70 +11,38 @@ from langchain.retrievers import EnsembleRetriever
 
 
 
-urls = [
-    "https://www.nsca.com/education/articles/kinetic-select/introduction-to-dynamic-warm-up/?srsltid=AfmBOooXx861T7Y6LBy8OivPOD72p1Xqjo-EDIVLjKxfF1BvVrSjw_Sl#:~:text=It%20is%20important%20for%20all,needs%2C%20goals%2C%20and%20abilities%20of",
-    "https://www.hss.edu/article_static_dynamic_stretching.asp#:~:text=Dynamic%20stretches%20should%20be%20used,cycling%2C%20followed%20by%20dynamic%20stretching",
-    "https://www.heart.org/en/healthy-living/fitness/fitness-basics/warm-up-cool-down#:~:text=Tips%3A",
-    "https://www.mayoclinic.org/healthy-lifestyle/fitness/in-depth/weight-training/art-20045842#:~:text=,sets%20that%20you%20perform%20may",
-    "https://news.wfu.edu/2017/10/31/lose-fat-preserve-muscle-weight-training-beats-cardio-older-adults/#:~:text=Image",
-    "https://pubmed.ncbi.nlm.nih.gov/39593476/#:~:text=significance%20with%20a%20probability%20value,protocols",
-    "https://pubmed.ncbi.nlm.nih.gov/25694615/#:~:text=Conclusions%3A%20%20Strong%20research,up%20mode.%20A%20clear%20knowledge",
-    "https://humankinetics.me/2019/03/04/what-is-the-ramp-warm-up/#:~:text=The%20RAMP%20warm,The%20acronym%20%E2%80%98RAMP%E2%80%99%20stands%20for",
-    "https://allianceortho.com/weightlifting-safety-for-healthy-joints/#:~:text=Warming%20up%20before%20weightlifting%20and,warming%20up%20and%20cooling%20down",
-    "https://www.americansportandfitness.com/blogs/fitness-blog/3-common-mistakes-when-using-the-lat-pulldown#:~:text=,prepare%20for%20the%20pulling%20motion",
-    "https://barbend.com/wrist-mobility-drills/#:~:text=1,Rolls",
-    "https://orthoinfo.aaos.org/en/recovery/rotator-cuff-and-shoulder-conditioning-program/#:~:text=Warmup%3A%20Before%20doing%20the%20following,or%20riding%20a%20stationary%20bicycle",
-    "https://www.movestrongphysicaltherapy.com/move-strong-blog/shoulder-warm-up-exercises#:~:text=1,for%20the%20training%20session%20ahead",
-    "https://theprehabguys.com/shoulder-warm-up-before-lifting/#:~:text=Below%20you%20learn%20the%20ultimate,mobility%20drills%2C%20stretches%2C%20and%20exercises",
-    "https://www.healthline.com/health/lat-stretches#:~:text=Lat%20Stretches%3A%2010%20Exercises%20to,increase%20your%20range%20of%20motion",
-    "https://www.pullup-dip.com/blogs/training-camp/exercises-for-more-pull-ups#:~:text=The%20first%20exercise%20that%20we,To%20do%20a%20lat",
-    "https://www.setforset.com/blogs/news/lat-stretches?srsltid=AfmBOooN8Bv8d0lAOIFQ0JmWZk_rWZqbpIH2MWqgPm4T2d3XnxzjILJP#:~:text=10%20Best%20Lat%20Stretches%20for,lat%20muscles%20and%20joints",
-    "https://www.nsca.com/education/articles/ptq/time-efficient-training/?srsltid=AfmBOoqh60gfeSD4Vw5a4QPGYiEPjCMGbWojHel7bMPVrvnwgTHCvKw1#:~:text=Time,during%20training%2C%20thereby%20optimizing",
-    "https://pmc.ncbi.nlm.nih.gov/articles/PMC5213357/#:~:text=Many%20warm,However",
-    "https://blog.nasm.org/dynamic-warm-ups-for-athletes-injury-prevention-and-sports-performance-benefits#:~:text=Dynamic%20Warm,their%20benefits%20for%20injury%20prevention",
-    "https://www.youtube.com/watch?v=y4e5F2RQvaI#:~:text=Shoulder%20Warm,you%27re%20warming%20up%20the%20shoulder",
-    #2. 운동 중간 체크 포인트 (세트 도중 자세·자극 확인) ,
-    "https://www.acefitness.org/resources/everyone/exercise-library/158/seated-lat-pulldown/?srsltid=AfmBOopiMFfZB9Yb1gc5NKh9NGRh-reQTOVDFPLLFJ3Y8rGGo0hUdpEc#:~:text=STARTING%20POSITION%3A%20Sit%20in%20the,head%20aligned%20with%20your%20spine",
-    "https://www.socalpowerlifting.net/post/accessory-review-lat-pulldowns#:~:text=Arching%20your%20back",
-    "https://www.bodybuilding.com/fun/marc-megna-lifting-lessons-lat-pull-down.html#:~:text=Pull%20the%20weight%20down%20slowly%2C,your%20rhomboids%2C%20so%20stay%20upright",
-    "https://joshstrength.com/2020/01/the-science-of-training-lats/#:~:text=2,grip%E2%80%9D%2C%20as%20this%20reduces%20biceps   ",
-    "https://archive.t-nation.com/training/the-torso-solution/#:~:text=The%20first%20key%20point%20is,depending%20on%20your%20limb%20length",
-    "https://pubmed.ncbi.nlm.nih.gov/24662157/#:~:text=activation%20between%20grip%20widths%20for,wide%20grips%3B%20however%2C%20athletes%20and",
-    "https://www.strengthlog.com/are-rows-and-lat-pulldowns-enough-for-great-biceps-growth/#:~:text=Do%20Lat%20Pulldowns%20and%20Rows,equally%20good%20as%20barbell%20curls",
-    "https://www.mayoclinic.org/healthy-lifestyle/fitness/in-depth/weight-training/art-20045842#:~:text=,least%20two%20times%20a%20week",
-    "https://www.socalpowerlifting.net/post/accessory-review-lat-pulldowns#:~:text=each%20other",
-        #3. 보조근 강화 전략 (랫풀다운 보조 근육 강화) ,
-    "https://www.healthline.com/health/fitness-exercise/pull-up-prep#:~:text=Share%20on%20Pinterest-",
-    "https://www.gq.com/story/how-to-get-better-at-pull-ups#:~:text=6%20Exercises%20to%20Help%20You,it%3A%20Using%20an%20overhand",
-    "https://www.opexfit.com/blog/seven-different-pull-up-grips-and-their-benefits#:~:text=Seven%20Different%20Pull,the%20forearms%2C%20shoulders%2C%20and%20biceps",
-    "https://www.trainheroic.com/blog/want-bigger-biceps-do-more-chin-ups/#:~:text=Want%20Bigger%20Biceps%3F%20Do%20More,chin%20ups%20into%20your%20routine",
-    "https://pubmed.ncbi.nlm.nih.gov/19387371/#:~:text=body%20mass%20to%20achieve%20one,fat%29%20affected",
-    "https://www.joionline.net/library/the-top-5-worst-shoulder-exercises-to-avoid-lateral-raises-and-more/#:~:text=What%20are%20the%20Best%20Shoulder,Tendonitis%20or%20Rotator%20Cuff%20Issues",
-    "https://blog.nasm.org/biomechanics-of-the-lat-pulldown#:~:text=The%20lat%20pulldown%20is%20a,the%20individual%20performs%20the%20exercise",
-    "https://sunnyhealthfitness.com/blogs/workouts/full-body-landmine-lat-pulldown-strength-training-for-beginners?srsltid=AfmBOor3wDBC9OweS9ark8DIGyd8Zvk1dbGqhrI9rBueME5ytBhS9VnK#:~:text=Full%20Body%20Landmine%20%2B%20Lat,your%20regular%20strength%20training%20routine",
-    # 4. 올바른 셋업과 자세 (기구 세팅 및 폼) ,
-    "https://www.bodybuilding.com/fun/marc-megna-lifting-lessons-lat-pull-down.html#:~:text=If%20you%27re%20a%20rocker%2C%20then,Everything%20should%20be%20tight",
-    "https://pmc.ncbi.nlm.nih.gov/articles/PMC11667758/#:~:text=Before%20each%20training%20session%2C%20participants,Each",
-    "https://www.bodybuilding.com/fun/marc-megna-lifting-lessons-lat-pull-down.html#:~:text=If%20you%27re%20a%20rocker%2C%20then,Everything%20should%20be%20tight",
-    "https://www.gymreapers.com/blogs/news/exercises-to-use-weight-belt?srsltid=AfmBOoqqRz4vf-lB2MD38gcPYEulwqXsZ40C1gxVnkBVrlKZMsBxnfyw#:~:text=Weightlifting%20belts%20are%20unnecessary%20for,spinal%20support%20is%20very%20minimal",
-    "https://cohenhp.com/weight-lifting-belts-do-you-need-one/#:~:text=Weight%20Lifting%20Belts%3A%20Do%20You,For%20more",
-    "https://www.joionline.net/library/the-top-5-worst-shoulder-exercises-to-avoid-lateral-raises-and-more/#:~:text=Shoulder%20press%20or%20military%20press,neck%20can%20lead%20to%20injury",
-    "https://pubmed.ncbi.nlm.nih.gov/24662157/#:~:text=narrow%20grip%20%28p%20%3D%200,2%20times%20the%20biacromial%20distance",
-    "https://www.socalpowerlifting.net/post/accessory-review-lat-pulldowns#:~:text=Supinated%20grip",
-    "https://www.dmoose.com/blogs/muscle-building/top-10-lat-pulldown-variations-stronger-wider-back?srsltid=AfmBOoqiuJf7_BkyxnlcPUXj0xM4DRZUEORTzzHI_wsvQArlfKAE9_ZL#:~:text=Top%2010%20Lat%20Pulldown%20Variations,an%20underhand%20grip%20and",
-    "https://www.verywellfit.com/how-to-do-the-lat-pulldown-3498309#:~:text=Lat%20Pulldowns%3A%20Techniques%2C%20Benefits%2C%20Variations,slightly%20backward%20is%20OK%2C",
-    #5. 안전 장치 및 도구 활용 (벨트·랩·스트랩 등) ,
-    "https://www.gymreapers.com/blogs/news/exercises-to-use-weight-belt?srsltid=AfmBOoqqRz4vf-lB2MD38gcPYEulwqXsZ40C1gxVnkBVrlKZMsBxnfyw#:~:text=Weightlifting%20belts%20are%20unnecessary%20for,spinal%20support%20is%20very%20minimal",
-    "https://www.self.com/story/do-you-need-weight-lifting-belts#:~:text=Should%20You%20Wear%20a%20Lifting,you%27re%20lifting%20with%20a%20belt",
-    "https://news.wfu.edu/2017/10/31/lose-fat-preserve-muscle-weight-training-beats-cardio-older-adults/#:~:text=Image",
-    "https://rxfit.co/shoulder-impingement-exercises-to-avoid/#:~:text=Shoulder%20Impingement%20Exercises%20To%20Avoid%3A,These%20exercises%20require%20shoulder",
-    "https://strengthwarehouseusa.com/blogs/resources/lat-pulldown-alternatives?srsltid=AfmBOorzW_S7H7ET7snnQhyfupqz0-H-5VVMolUpKFxoaMZ2719VM-V1#:~:text=Lat%20Pulldown%20Alternatives%20for%20a,Other%20muscles%20this%20exercise",
-    "https://www.reddit.com/r/xxfitness/comments/49tp4c/short_girl_problems/#:~:text=Short%20girl%20problems%20%3A%20r%2Fxxfitness,momentarily%20to%20reach%20the%20handles",
-    "https://www.womenshealthmag.com/fitness/g26801302/best-lat-exercises-for-women/#:~:text=11%20Best%20Lat%20Exercises%20For,as%20far%20as%20you",
-    "https://strengthlevel.com/strength-standards/lat-pulldown/lb#:~:text=Lat%20Pulldown%20Standards%20for%20Men,other%20lifters%20at%20your%20bodyweight",
-    "https://news.wfu.edu/2017/10/31/lose-fat-preserve-muscle-weight-training-beats-cardio-older-adults/#:~:text=Image",
-    "https://www.health.harvard.edu/exercise-and-fitness/two-types-of-exercise-may-be-needed-to-preserve-muscle-mass-during-weight-loss#:~:text=Two%20types%20of%20exercise%20may,physical%20function%20than%20either",
-    
+urls = ["https://www.mayoclinic.org/healthy-lifestyle/fitness/in-depth/weight-training/art-20045842#:~:text=,weights%20on%20the%20weight%20racks,",  
+"https://www.betterhealth.vic.gov.au/health/healthyliving/resistance-training-preventing-injury#:~:text=,stretching,",  
+"https://pubmed.ncbi.nlm.nih.gov/35438660/#:~:text=based%20on%20the%20Physiotherapy%20Evidence,may%20actually%20hinder%20muscular,",  
+"https://pmc.ncbi.nlm.nih.gov/articles/PMC6934277/#:~:text=Conclusions,",  
+"https://pubmed.ncbi.nlm.nih.gov/35438660/#:~:text=strength%20gains,may%20actually%20hinder%20muscular,",  
+"https://www.nsca.com/contentassets/8323553f698a466a98220b21d9eb9a65/foundationsoffitnessprogramming_201508.pdf?srsltid=AfmBOoreS8nYzqFPh_GTrD_0VyMec5f_nwp4bj4PIzOJVK1fF6PlpPm8#:~:text=Existing%20strength%20training%20guidelines%20suggest,squat%2C%20lunge%2C%20bench%20press%2C%20etc,",  
+"https://pmc.ncbi.nlm.nih.gov/articles/PMC5744434/#:~:text=and%20increased%20fat%20free%20mass,were%20found%20for%20body%20composition,",  
+"https://www.verywellfit.com/how-to-use-weight-machines-and-gym-equipment-4153575#:~:text=Look%20for%20the%20Adjustment%20Point,",  
+"https://www.acefitness.org/resources/pros/expert-articles/5561/6-benefits-of-using-weightlifting-machines/?srsltid=AfmBOorSwjQxyr--5kVddALe3Bj_uGifr-Oo__VopjhiqrgDgKMagwDi#:~:text=1,path%20of%20motion,",  
+"https://pubmed.ncbi.nlm.nih.gov/21694556/#:~:text=in%20moderate,on%20%E2%89%A52%20d%C2%B7wk%20is%20recommended,",  
+"https://pmc.ncbi.nlm.nih.gov/articles/PMC9565175/#:~:text=untrained%20subjects,overview%20the%20frequency%2C%20type%2C%20and,",  
+"https://www.betterhealth.vic.gov.au/health/healthyliving/resistance-training-preventing-injury#:~:text=drop%20them,the%20same%20muscle%20group%20again,",  
+"https://www.mayoclinic.org/healthy-lifestyle/fitness/in-depth/weight-training/art-20045842#:~:text=,sets%20that%20you%20perform%20may,",  
+"https://www.nsca.com/education/articles/kinetic-select/introduction-to-dynamic-warm-up/?srsltid=AfmBOooE2L2CrFgVSQi0hmJe-DrFREDknNdsodzfjkcgBdKh4M2kdVHj#:~:text=It%20is%20important%20for%20all,needs%2C%20goals%2C%20and%20abilities%20of,",  
+"https://www.mayoclinic.org/healthy-lifestyle/fitness/in-depth/weight-training/art-20045842#:~:text=,sets%20that%20you%20perform%20may,",  
+"https://www.betterhealth.vic.gov.au/health/healthyliving/resistance-training-preventing-injury,",  
+"https://pmc.ncbi.nlm.nih.gov/articles/PMC9565175/#:~:text=6,41%20%2C%2084,",  
+"https://pubmed.ncbi.nlm.nih.gov/26700744/#:~:text=Results%3A%20%20In%20both%20muscles%2C,muscle%20the%20activity%20of%20the,",  
+"https://www.frontiersin.org/news/2019/08/09/sports-mind-muscle-connection-weightlifting,",  
+"https://www.mayoclinic.org/healthy-lifestyle/fitness/in-depth/weight-training/art-20045842#:~:text=,as%20you%20lower%20the%20weight,",  
+"https://www.houstonmethodist.org/blog/articles/2023/may/why-proper-breathing-during-exercise-is-important-how-to-avoid-common-mistakes/#:~:text=In%20regard%20to%20the%20latter%2C,circumstances%2C%20can%20be%20incredibly%20dangerous,",  
+"https://pubmed.ncbi.nlm.nih.gov/19204579/#:~:text=a%20moderate%20velocity,recommended%20that%20light%20to%20moderate,",  
+"https://pubmed.ncbi.nlm.nih.gov/19620931/#:~:text=pediatric%20years%20may%20help%20to,conditioning%20industry%20is%20getting%20more,",  
+"https://pubmed.ncbi.nlm.nih.gov/31343601/#:~:text=resilience%20and%20increase%20vulnerability%20to,on%20physical%20functioning%2C%20mobility%2C%20independence,",  
+"https://www.ideafit.com/resistance-training-for-older-adults-new-nsca-position-stand/#:~:text=Stand%20www,to%20ensure%20correct%20exercise%20technique,",  
+"https://www.nsca.com/contentassets/2a4112fb355a4a48853bbafbe070fb8e/resistance_training_for_older_adults__position.1.pdf?srsltid=AfmBOooJV-lwZ8HgMJ4IiB8iE0a4K6pE9PkEclU062SqrROgBuhOknow#:~:text=Part%201%3A%20Resistance%20Training%20Program,of%201,",  
+"https://www.nsca.com/education/articles/kinetic-select/introduction-to-dynamic-warm-up/?srsltid=AfmBOooE2L2CrFgVSQi0hmJe-DrFREDknNdsodzfjkcgBdKh4M2kdVHj#:~:text=and%20improving%20joint%20range%20of,every%20sport%20practice%20and%20competition,",  
+"https://pmc.ncbi.nlm.nih.gov/articles/PMC9565175/#:~:text=instability%29%20and%20pain,",  
+"https://www.betterhealth.vic.gov.au/health/healthyliving/resistance-training-preventing-injury,",  
+"https://www.cdc.gov/physical-activity-basics/guidelines/chronic-health-conditions-and-disabilities.html#:~:text=Consulting%20a%20health%20care%20professional,",  
+"https://nutritionsource.hsph.harvard.edu/physical-activity-considerations-special-populations/#:~:text=intensity%20and%20duration%20of%20the,strength%2C%20and%20quality%20of%20life",
+
 ]
 
 web_docs = []
@@ -94,7 +62,7 @@ if not web_docs:
     raise ValueError("PDF에서 텍스트를 가져오지 못했습니다. 이미지 기반 PDF인지 확인하세요.")
 
 # 문서 분할
-text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=50)
 split_documents = text_splitter.split_documents(web_docs)
 embedding_name = "text-embedding-ada-002"
 embeddings = OpenAIEmbeddings(model=embedding_name)
@@ -106,7 +74,7 @@ vectorstore = Chroma.from_documents(
 )
 
 # 벡터 데이터베이스 추가
-semantic_retriever = vectorstore.as_retriever(search_kwargs={"k": 10})
+semantic_retriever = vectorstore.as_retriever(search_kwargs={"k": 50})
 
 # 키워드 기반 검색기 초기화 (BM25)
 bm25_retriever = BM25Retriever.from_documents(split_documents)
