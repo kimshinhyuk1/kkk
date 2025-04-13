@@ -5,11 +5,15 @@ from agents.bg_task_agent.bg_task_agent import bg_task_agent
 from agents.chatbot import chatbot
 from agents.command_agent import command_agent
 from agents.research_assistant import research_assistant
-from .state_graph import graph  # 새롭게 추가된 state_graph (graph 객체)
+
+# ✅ 그래프 인스턴스 객체를 정확하게 가져오도록 수정
+from .diet_graph import compiled_diet_graph
+from .medical_graph import compiled_medical_graph
+from .general_graph import compiled_general_graph
 
 from schema import AgentInfo
 
-DEFAULT_AGENT = "research-assistant"
+DEFAULT_AGENT = "diet_graph-agent"
 
 
 @dataclass
@@ -25,8 +29,17 @@ agents: dict[str, Agent] = {
     ),
     "command-agent": Agent(description="A command agent.", graph=command_agent),
     "bg-task-agent": Agent(description="A background task agent.", graph=bg_task_agent),
-    "state-graph-agent": Agent(
-        description="A state-based agent with structured conversation flow.", graph=graph  # ✅ 추가된 부분
+    "diet_graph-agent": Agent(
+        description="A state-based agent with structured conversation flow.",
+        graph=compiled_diet_graph  # ✅ 정확히 CompiledStateGraph 인스턴스 사용
+    ),
+    "medical_graph-agent": Agent(
+        description="A state-based agent with structured conversation flow.",
+        graph=compiled_medical_graph
+    ),
+    "general_graph-agent": Agent(
+        description="A state-based agent with structured conversation flow.",
+        graph=compiled_general_graph
     ),
 }
 

@@ -106,7 +106,7 @@ def check_query_status(state: State):
     return is_finalized
 
 # --- 노드 함수들 ---
-from .pdf_loader import hybrid_retriever
+from .medical_loader import hybrid_retriever
 
 import logging
 logger = logging.getLogger(__name__)
@@ -425,11 +425,11 @@ flow.add_edge("filter_node", "generate")
 flow.add_edge("generate", END)
 
 memory = MemorySaver()
-graph = flow.compile(checkpointer=memory)
 
-def stream_graph(inputs, config):
+compiled_medical_graph = flow.compile(checkpointer=memory)
+
+def medical_graph(inputs, config):
     final_output = None
-    for output in graph.stream(inputs, config, stream_mode="updates"):
-        # 중간 output은 무시
+    for output in compiled_medical_graph.stream(inputs, config, stream_mode="updates"):
         final_output = output
     return final_output
