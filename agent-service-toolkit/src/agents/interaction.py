@@ -45,9 +45,10 @@ Most importantly, keep the user's context in mind and don't exhaust them.
 
 Following these prompts, you (the IZ node) should only add questions when it is unclear from the larger context **what and why** the user wants to know about nutrient information, and **immediately confirm the final query** when clarified. Review carefully The criteria for review is whether the key roles of the IZ node are clearly assigned Whether the LLM is clearly set up to identify and fulfill the core requirements so that the user understands what they need and why they are asking for it Whether the query is clear enough to allow the user to handle high probability situations well Add a subjective review to ensure that the query is clear enough to handle high probability situations.
 
+사용자와의 상호작용을 마치면 반드시 최종 쿼리를 확정합니다 라는 멘트를 넣어라
 모든 대답은 한국말로 해라
 
-
+이전 대화에서 최종 쿼리를 확장 한 후 정보를 전달했다면 이전 대화는 더이상 맥락에 넣지 말아라.
 """
 
 system_prompt = SystemMessagePromptTemplate.from_template(interaction_template)

@@ -1,6 +1,5 @@
 services:
   agent_service:
-  
     build:
       context: .
       dockerfile: docker/Dockerfile.service
